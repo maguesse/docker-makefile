@@ -1,4 +1,3 @@
-
 USERNAME=maguesse
 NAME=$(shell basename $(CURDIR))
 
@@ -7,17 +6,19 @@ TAG=tag
 
 IMAGE=$(USERNAME)/$(NAME)
 
+DOCKER = $(shell which docker)
 DOCKER_BUILD_CONTEXT=.
 DOCKER_FILE_PATH=Dockerfile
 
-
+MAKEFLAGS += -rR
+MAKEFLAGS += --no-print-directory
 SHELL=/bin/bash
-SUBDIRS = $(shell find . -mindepth 2 -name Makefile -exec dirname {} \;)
+SUBDIRS = $(shell find . -mindepth 2 -name $(DOCKER_FILE_PATH) -exec dirname {} \;)
 .PHONY: subdirs $(SUBDIRS)
 
 subdirs: $(SUBDIRS)
 $(SUBDIRS):
-	$(MAKE) -C $@ $(MAKECMDGOALS)
+	@$(MAKE) -C $@ $(MAKECMDGOALS)
 
 .PHONY: help
 help: ## This help
@@ -25,34 +26,51 @@ help: ## This help
 
 .DEFAULT_GOAL := help
 
-.PHONY: dockerfile $(DOCKER_FILE_PATH) pre-build docker-build post-build build
+.PHONY: pre-build docker-build post-build build
 
-dockerfile: $(DOCKER_FILE_PATH)
-$(DOCKER_FILE_PATH):
-	@echo test
+ifeq (,$(wildcard $(DOCKER_FILE_PATH)))
+# No Dockerfile, nothing to build
+BUILD_TARGETS =
+else
+BUILD_TARGETS = pre-build docker-build post-build
+endif
 
-build: $(SUBDIRS) $(DOCKER_FILE_PATH) pre-build docker-build post-build ## Build the container
+build: $(SUBDIRS) $(BUILD_TARGETS) ## Build the container
 
 pre-build:
 
 post-build:
 
-docker-build:
-	@echo in $(MAKEFILE_LIST)
-	@echo "In docker-build $(NAME) $(CURDIR)"
-	@echo docker build $(DOCKER_BUILD_ARGS) -t $(IMAGE):$(VERSION) $(DOCKER_BUILD_CONTEXT) -f $(DOCKER_FILE_PATH)
+docker-build: $(DOCK)
+	@echo Build image $(IMAGE):$(VERSION)
+	@$(DOCKER) build --rm --force-rm $(DOCKER_BUILD_ARGS) -t $(IMAGE):$(VERSION) $(DOCKER_BUILD_CONTEXT) -f $(DOCKER_FILE_PATH)
+	@echo Tag image $(IMAGE):latest
+	@$(DOCKER) tag $(IMAGE):$(VERSION) $(IMAGE):latest
+
 
 .PHONY: help clean purge
 
-
-clean: ## Clean
+clean: $(SUBDIRS) ## Clean
+	$(call docker-remove-image,$(IMAGE),$(VERSION))
+	$(call docker-remove-image,$(IMAGE),latest)
 
 prune: ## Purge
-	@docker image prune --force
-	@docker volume prune --force
-	@docker network prune --force
+	-$(call docker-remove-dangling,image)
+	-$(call docker-remove-dangling,volume)
+	-$(call docker-remove-dangling,network)
 
 ## Utility functions
-define docker_file_exists
-@echo exist?
+
+define docker-remove-image
+@$(DOCKER) image inspect ${1}:${2} > /dev/null 2>&1;\
+if [ $$? -eq 0 ]; \
+then \
+	echo Removing docker image ${1}:${2} ;\
+	$(DOCKER) image rm ${1}:${2} ;\
+fi
+endef
+
+define docker-remove-dangling
+@echo Removing dangling ${1}s
+@$(DOCKER) ${1} prune --force
 endef
