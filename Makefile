@@ -28,6 +28,7 @@ help: ## This help
 
 .PHONY: pre-build docker-build post-build build
 
+# Little hack : try not to run "build" rules if no Dockerfile is present in the current folder.
 ifeq (,$(wildcard $(DOCKER_FILE_PATH)))
 # No Dockerfile, nothing to build
 BUILD_TARGETS =
@@ -61,6 +62,9 @@ prune: ## Purge
 
 ## Utility functions
 
+# Removes an image given its:
+# - name
+# - tag or version
 define docker-remove-image
 @$(DOCKER) image inspect ${1}:${2} > /dev/null 2>&1;\
 if [ $$? -eq 0 ]; \
@@ -70,6 +74,10 @@ then \
 fi
 endef
 
+# Removes dangling docker's assets:
+# - image
+# - volume
+# - network
 define docker-remove-dangling
 @echo Removing dangling ${1}s
 @$(DOCKER) ${1} prune --force
